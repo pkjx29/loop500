@@ -1,0 +1,49 @@
+<div class="notice"><b>Prototype with sample data.</b> Built by Priyanshu Kumar Jha for the NxtWave Growth Challenge. Not an official NxtWave page, and nothing you type leaves this browser.</div>
+<div class="shell">
+  <header class="masthead">
+    <div class="brand">
+      <div class="wordmark">Loop<span>500</span></div>
+      <p class="tagline">A referral engine and live tracker built for one job: 500 final-year registrations in 7 days on ₹2,000.</p>
+    </div>
+    <div class="mast-tools"><button class="btn btn-sm" id="themeBtn" type="button" data-action="theme">Dark mode</button></div>
+  </header>
+  <div class="tabs-wrap">
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" type="button" id="tab-student" data-tab="student" aria-selected="true">Student view<small>What a final-year sees</small></button>
+      <button class="tab" role="tab" type="button" id="tab-mission" data-tab="mission" aria-selected="false">Mission control<small>What the growth team sees</small></button>
+      <button class="tab" role="tab" type="button" id="tab-forecast" data-tab="forecast" aria-selected="false">Forecast<small>How 500 comes in</small></button>
+      <button class="tab" role="tab" type="button" id="tab-kit" data-tab="kit" aria-selected="false">Launch kit<small>Tracked links and messages</small></button>
+    </nav>
+  </div>
+  <main>
+    <section class="view" id="view-student" role="tabpanel" aria-labelledby="tab-student">
+      <div class="stu-grid" id="stuGrid">
+        <div class="stu-intro card">
+          <p class="eyebrow">Start here</p>
+          <h2 class="h2">Try the whole loop in about a minute</h2>
+          <ol class="steps">
+            <li><span><b>Register as a student.</b> The phone is the real flow. “Fill sample details” saves typing.</span></li>
+            <li><span><b>Bring a teammate.</b> Share your link on WhatsApp, or press “Simulate a teammate joining” and watch your pass unlock at 3.</span></li>
+            <li><span><b>Open Mission control.</b> Your registration is already counted, attributed to the captain whose link you came through, and in the funnel.</span></li>
+          </ol>
+        </div>
+        <div class="stu-phone"><div class="phone"><div class="phone-screen" id="phone" tabindex="0" aria-label="Student registration flow"></div></div></div>
+        <div class="stu-side" id="side"></div>
+      </div>
+    </section>
+    <section class="view" id="view-mission" role="tabpanel" aria-labelledby="tab-mission" hidden></section>
+    <section class="view" id="view-forecast" role="tabpanel" aria-labelledby="tab-forecast" hidden></section>
+    <section class="view" id="view-kit" role="tabpanel" aria-labelledby="tab-kit" hidden></section>
+  </main>
+  <footer class="foot">
+    <h3>How this prototype works</h3>
+    <div class="foot-grid">
+      <p><b>What is real</b>Every number on this page is computed from an event log, not typed in. Registration, referral codes, tracked links, attribution, duplicate blocking, the three A/B tests and their statistics, the projection and the daily recommendation all run live in your browser.</p>
+      <p><b>What is simulated</b>The 7-day campaign: fictional students at real campuses, generated from the plan’s own playbook with a fixed seed, so the week plays out the same way every time. Your own registrations are added on top and saved only in this browser.</p>
+      <p><b>What production needs</b>A shared store so codes work across devices (a Google Sheet behind an Apps Script endpoint is enough for 500 rows), an n8n flow for confirmations and reminders, and one WhatsApp announcement group for broadcasts.</p>
+    </div>
+    <p class="fine">Loop500 · built by Priyanshu Kumar Jha, final-year B.E., Ramaiah Institute of Technology, Bengaluru · Workshop name from the challenge brief · Dates, people and results shown are illustrative.</p>
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

@@ -1,0 +1,758 @@
+/* Loop500 interface. Every number shown is computed by LoopCore from the event log. */
+(function () {
+  'use strict';
+  var C = window.LoopCore;
+  var KEY = 'loop500.state.v1';
+  var CANONICAL_URL = '__CANONICAL_URL__';
+  var CAN_SAVE_FILES = true;   // the standalone build offers a CSV file; the embedded build offers copy only
+  var WORKSHOP = { title: 'Build Your First AI Project in 60 Minutes', when: 'Sun 1 Nov, 7:00 PM IST', gcal: '20261101T133000Z/20261101T143000Z' };
+  var DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var GRP = { class: 'Class WhatsApp group', batch: 'Batch WhatsApp group', other: 'Hostel or project group' };
+  var $ = function (s, el) { return (el || document).querySelector(s); };
+  var $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
+  var nf = new Intl.NumberFormat('en-IN');
+  function n0(x) { return nf.format(Math.round(x)); }
+  function pct(x, d) { return x === null || x === undefined || isNaN(x) ? '–' : (x * 100).toFixed(d || 0) + '%'; }
+  function conf(x) { return x > 0.99 ? 'over 99%' : Math.round(x * 100) + '%'; }
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function find(arr, fn) { for (var i = 0; i < arr.length; i++) if (fn(arr[i])) return arr[i]; return null; }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function svg(d, extra) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + (extra || '') + '>' + d + '</svg>'; }
+  var ICON = {
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', ' stroke-width="2.6"'),
+    lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'),
+    open: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 017.5-2"/>'),
+    chat: svg('<path d="M20 11.5a8 8 0 01-11.8 7L4 20l1.4-4A8 8 0 1120 11.5z"/>'),
+    copy: svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/>'),
+    cal: svg('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>'),
+    users: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0112 0M16 5.2a3.2 3.2 0 010 5.6M17.5 14.5A6 6 0 0121 20"/>'),
+    alert: svg('<path d="M12 4l9 15.5H3L12 4z"/><path d="M12 10v4.5M12 17.2v.3"/>'),
+    info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.3"/>'),
+    flag: svg('<path d="M5 21V4M5 4h12l-2.5 4L17 12H5"/>'),
+    back: svg('<path d="M14 6l-6 6 6 6"/>')
+  };
+
+  /* ---------- state ---------- */
+  function fresh() {
+    return { v: 1, tab: 'student', day: 4, lever: true, theme: null, live: { visits: [], regs: [], events: [] }, meId: null, entry: null, handledToken: null,
+      visitId: null, hook: 'B', frame: 'B', screen: 'main', lb: 'students', draft: { name: '', phone: '', college: '', year: '2027' },
+      tables: {}, capAll: false, fc: null, kit: { who: 'captain', capId: null, grp: 'class', partnerId: 'P2', hook: 'B' }, seq: 0, dupes: 0 };
+  }
+  var state = (function () {
+    try { var s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && s.v === 1 && s.live && s.live.regs && s.kit && s.draft) return C.assign(fresh(), s); } catch (e) { /* storage unavailable */ }
+    return fresh();
+  })();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+  var sims = {}, cache = null, confirmReset = false, playing = null;
+  function sim() { var k = state.lever ? 'on' : 'off'; return sims[k] || (sims[k] = C.simulate({ lever: state.lever })); }
+  function an() { return cache || (cache = C.analyze(sim(), state.day * 24, state.live)); }
+  function nowT() { return state.day * 24 - 0.01; }
+  function me() { return state.meId ? find(state.live.regs, function (r) { return r.id === state.meId; }) : null; }
+  function findReg(code) { return find(state.live.regs, function (r) { return r.code === code; }) || find(sim().regs, function (r) { return r.code === code; }); }
+  function takenCodes() { var t = {}; state.live.regs.forEach(function (r) { t[r.code] = 1; }); ['on', 'off'].forEach(function (k) { if (sims[k]) C.assign(t, sims[k].taken); }); return t; }
+  function ev(k, text) { state.live.events.unshift({ k: k, text: text }); if (state.live.events.length > 40) state.live.events.length = 40; }
+  function phoneKey(raw) { var d = C.normalizePhone(raw), h = 5381; for (var i = 0; i < d.length; i++) h = ((h << 5) + h + d.charCodeAt(i)) >>> 0; return 'p' + h.toString(36); }
+
+  function baseUrl() {
+    var canon = CANONICAL_URL.indexOf('__') === 0 ? '' : CANONICAL_URL, embedded;
+    try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+    if (canon && (embedded || location.protocol === 'file:' || location.protocol === 'about:')) return canon;
+    return location.href.split('#')[0].split('?')[0];
+  }
+  function isEmbedded() { try { return window.self !== window.top; } catch (e) { return true; } }
+  function linkFor(token) { return baseUrl() + (token ? '#' + token : ''); }
+  function waLink(text) { return 'https://wa.me/?text=' + encodeURIComponent(text); }
+
+  /* how the current visitor arrived: a parsed link token resolved against the campaign */
+  function entryInfo(tokenStr) {
+    var t = C.parseToken(tokenStr || ''), s = sim(), out = { kind: 'direct', token: '', label: 'Direct, no tracked link', college: '', source: 'direct, no tracked link' };
+    if (!t) return out;
+    if (t.kind === 'captain') {
+      var c = find(s.captains, function (x) { return x.id === t.capId; }) || find(C.simulate({ lever: true }).captains, function (x) { return x.id === t.capId; });
+      if (!c) return out;
+      return { kind: 'captain', token: 'c-' + c.id + '-' + t.grp, cap: c, grp: t.grp, college: c.college, label: GRP[t.grp] + ' · post by ' + c.name + ', ' + c.college,
+        invite: c.name + ', your Campus Captain at ' + c.college + ', shared this', source: GRP[t.grp].toLowerCase() + ', captain ' + c.name + ' (' + c.id + ')' };
+    }
+    if (t.kind === 'partner') {
+      var p = find(s.partners, function (x) { return x.id === t.partnerId; });
+      if (!p) return out;
+      return { kind: 'partner', token: 'p-' + p.id, partner: p, college: p.college, label: (p.type === 'club' ? 'Club broadcast' : 'Placement-cell mail') + ' · ' + p.label + ', ' + p.college,
+        invite: 'Shared by the ' + p.label + ' at ' + p.college, source: (p.type === 'club' ? 'club broadcast' : 'placement-cell mail') + ', ' + p.label + ' (' + p.id + ')' };
+    }
+    if (t.kind === 'ref') {
+      var r = findReg(t.code);
+      if (!r) return C.assign(out, { unknown: t.code });
+      return { kind: 'ref', token: 'r-' + r.code, ref: r, college: r.college, label: 'A friend’s squad link · ' + r.name + ', ' + r.college,
+        invite: r.name + ' from ' + r.college + ' wants you on their squad', source: 'squad link of ' + r.name + ' (' + r.code + ')' };
+    }
+    return out;
+  }
+  function curVisit() { return state.visitId ? find(state.live.visits, function (v) { return v.id === state.visitId; }) : null; }
+  function startVisit() {
+    var e = entryInfo(state.entry), id = 'L.v' + (++state.seq);
+    state.live.visits.push({ id: id, t: nowT(), src: e.kind === 'ref' ? 'referral' : e.kind, grp: e.kind === 'captain' ? e.grp : (e.kind === 'partner' ? e.partner.type : null),
+      capId: e.cap ? e.cap.id : null, partnerId: e.partner ? e.partner.id : null, ref: e.ref ? e.ref.code : null, hook: state.hook, started: false, regId: null, live: true });
+    state.visitId = id; state.meId = null; state.screen = 'main';
+    state.draft = { name: '', phone: '', college: e.college || '', year: '2027' };
+    ev('visit', 'Landing page opened. Source: ' + e.source + '. Headline ' + state.hook + '.');
+  }
+  function register(d) {
+    var a = an(), e = entryInfo(state.entry), v = curVisit();
+    if (!v) { startVisit(); v = curVisit(); }
+    var disp = C.displayName(d.name), code = C.makeCode(disp, takenCodes(), Math.random);
+    var root = e.kind === 'captain' ? { type: 'captain', id: e.cap.id } : (e.kind === 'partner' ? { type: 'partner', id: e.partner.id } : (e.kind === 'ref' ? { type: e.ref.rootType, id: e.ref.rootId } : { type: 'direct', id: null }));
+    var reg = { id: 'L.r' + (++state.seq), t: nowT(), name: disp, college: d.college, branch: null, fy: d.year === '2027', year: d.year, code: code,
+      refBy: e.ref ? e.ref.code : null, parentId: e.ref ? e.ref.id : null, src: v.src, grp: v.grp, capId: v.capId, partnerId: v.partnerId, rootType: root.type, rootId: root.id,
+      hook: state.hook, inc: state.frame, shared: false, depth: e.ref ? (e.ref.depth || 0) + 1 : 0, live: true, self: true, phoneKey: phoneKey(d.phone), phoneMask: C.maskPhone(d.phone), seat: a.all + 1 };
+    v.started = true; v.regId = reg.id; v.hook = state.hook;
+    state.live.regs.push(reg); state.meId = reg.id; state.screen = 'main';
+    var credit = e.kind === 'captain' ? 'Credited to captain ' + e.cap.name + ' (' + e.cap.id + ').' : (e.kind === 'ref' ? 'Credited to ' + e.ref.name + ' (' + e.ref.code + ').' : (e.kind === 'partner' ? 'Credited to ' + e.partner.label + ' (' + e.partner.id + ').' : 'No one to credit.'));
+    ev('signup', disp + ' registered: seat ' + reg.seat + ', code ' + code + '. ' + credit + (reg.fy ? '' : ' Not final-year, so it is stored but not counted toward 500.'));
+    if (e.ref) tierCheck(e.ref.code, e.ref.name);
+  }
+  function addTeammate() {
+    var m = me(); if (!m) return;
+    var a = an(), name = pick(C.FIRST) + ' ' + pick(C.LAST) + '.', vid = 'L.v' + (++state.seq), rid = 'L.r' + (++state.seq);
+    state.live.visits.push({ id: vid, t: nowT(), src: 'referral', grp: null, capId: null, partnerId: null, ref: m.code, hook: state.hook, started: true, regId: rid, live: true });
+    state.live.regs.push({ id: rid, t: nowT(), name: name, college: m.college, branch: null, fy: true, year: '2027', code: C.makeCode(name, takenCodes(), Math.random), refBy: m.code, parentId: m.id,
+      src: 'referral', grp: null, capId: null, partnerId: null, rootType: m.rootType, rootId: m.rootId, hook: state.hook, inc: state.frame, shared: false, depth: (m.depth || 0) + 1, live: true, self: false, seat: a.all + 1 });
+    m.shared = true;
+    ev('signup', name + ' registered with ' + m.code + '.');
+    tierCheck(m.code, m.name);
+  }
+  function tierCheck(code, name) {
+    var n = state.live.regs.filter(function (r) { return r.refBy === code; }).length + sim().regs.filter(function (r) { return r.refBy === code && r.t < state.day * 24; }).length;
+    var t = find(C.TIERS, function (x) { return x.at === n; });
+    ev('squad', name + '’s squad is at ' + n + (n < 3 ? ' of 3.' : '.') + (t ? ' Unlocked: ' + t.name + '.' : ''));
+    if (t && me() && me().code === code) toast('Unlocked: ' + t.name);
+  }
+
+  /* ---------- shared UI helpers ---------- */
+  var toastTimer = null;
+  function toast(msg) { var el = $('#toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.hidden = true; }, 2600); }
+  function copyText(text, okMsg, el) {
+    var done = function () { toast(okMsg || 'Copied'); };
+    var manual = function () {
+      if (!el) { toast('Copying is blocked in this view'); return; }
+      try { var r = document.createRange(); r.selectNodeContents(el); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); } catch (e) { /* selection unavailable */ }
+      toast('Copying is blocked here. The text is selected: press Ctrl or Cmd + C.');
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea'), ok = false; ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) done(); else manual();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+  }
+  function seg(action, v, label, cur, extra) { return '<button type="button" data-action="' + action + '" data-v="' + v + '" aria-pressed="' + (String(cur) === String(v)) + '"' + (extra || '') + '>' + label + '</button>'; }
+  function pill(tone, icon, text) { return '<span class="pill ' + tone + '">' + (icon ? ICON[icon] : '') + esc(text) + '</span>'; }
+  function tip(obj) { return ' data-tip="' + esc(JSON.stringify(obj)) + '"'; }
+  function niceMax(v, step) { return Math.max(step, Math.ceil(v / step) * step); }
+  function tableHTML(head, rows) {
+    return '<div class="scroll-x"><table><thead><tr>' + head.map(function (h, i) { return '<th' + (i ? ' class="r"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      rows.map(function (r) { return '<tr>' + r.map(function (c, i) { return '<td' + (i ? ' class="r"' : '') + '>' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+  }
+  function topRounded(x, y, w, h, r) {
+    if (h <= r) return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + Math.max(h, 1) + '"';
+    return '<path d="M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z"';
+  }
+
+  /* ---------- student view ---------- */
+  function landingHTML(a) {
+    var e = entryInfo(state.entry), d = state.draft, B = state.hook === 'B';
+    var years = [['2027', '2027'], ['2028', '2028'], ['other', 'Other']];
+    return '<div class="lp">' +
+      '<p class="lp-proto">Prototype · sample data · not an official NxtWave page</p>' +
+      (e.kind !== 'direct' ? '<p class="invite">' + ICON.users + '<span>' + esc(e.invite) + '</span></p>' : '') +
+      (e.unknown ? '<p class="invite">' + ICON.info + '<span>Invite code ' + esc(e.unknown) + ' is not recognised. You can still register.</span></p>' : '') +
+      '<p class="eyebrow">Free live workshop · ' + WORKSHOP.when + ' · Online</p>' +
+      (B ? '<h1 class="lp-h">Build the AI project <mark>your resume is missing.</mark> In 60 minutes.</h1>' +
+           '<p class="lp-sub">For final-year engineering students, any branch. No coding background needed.</p>'
+         : '<h1 class="lp-h">Learn to build with AI in 60 minutes.</h1>' +
+           '<p class="lp-sub">A free live workshop on building AI projects, for engineering students.</p>') +
+      '<ul class="lp-list">' +
+        '<li>' + ICON.check + '<span>You build and deploy an <b>AI Resume Analyzer</b> yourself, step by step</span></li>' +
+        '<li>' + ICON.check + '<span>You leave with a <b>live project link</b> for your resume, LinkedIn and next interview</span></li>' +
+        '<li>' + ICON.check + '<span>Certificate of completion and the starter template</span></li>' +
+      '</ul>' +
+      '<p class="lp-proof"><span class="dot"></span><span><b>' + n0(a.total) + '</b> final-years from <b>' + a.colleges.length + '</b> colleges are in</span></p>' +
+      '<form class="reg-form" id="regForm" novalidate>' +
+        '<h2>Save your seat</h2>' +
+        '<div class="field"><label for="f-name">Your name</label><input type="text" id="f-name" name="name" autocomplete="name" maxlength="60" value="' + esc(d.name) + '"><p class="err" id="e-name" hidden></p></div>' +
+        '<div class="field"><label for="f-phone">WhatsApp number</label><div class="phone-in"><span>+91</span><input type="tel" id="f-phone" name="phone" inputmode="numeric" autocomplete="tel-national" maxlength="14" value="' + esc(d.phone) + '"></div><p class="err" id="e-phone" hidden></p></div>' +
+        '<div class="field"><label for="f-college">College</label><input type="text" id="f-college" name="college" list="collegeList" autocomplete="organization" maxlength="80" value="' + esc(d.college) + '"><datalist id="collegeList">' + C.COLLEGES.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist><p class="err" id="e-college" hidden></p></div>' +
+        '<fieldset class="chips"><legend>Graduating in</legend>' + years.map(function (y) { return '<label class="chip"><input type="radio" name="year" id="f-year-' + y[0] + '" value="' + y[0] + '"' + (d.year === y[0] ? ' checked' : '') + '><span>' + y[1] + '</span></label>'; }).join('') + '</fieldset>' +
+        '<button class="btn btn-primary btn-block" type="submit">Register free</button>' +
+        '<p class="fine">Takes about 20 seconds. Your join link and reminders arrive on WhatsApp.</p>' +
+      '</form>' +
+      '<button type="button" class="link" data-action="fill">Fill sample details</button>' +
+      '<p class="lp-foot">Hosted by NxtWave in this simulation · Built for a hiring challenge</p>' +
+    '</div>';
+  }
+  function shareText(m) {
+    var link = linkFor('r-' + m.code);
+    return state.frame === 'B'
+      ? 'I just registered for this: a free 60-minute live session this Sunday, 7 PM, where we build and deploy an AI project and leave with a live link for the resume. No coding background needed.\n\nIf 3 of our project team join with my link, all of us unlock the Final-Year Project Idea Pack. Takes 20 seconds:\n' + link
+      : 'I just registered for a free 60-minute AI project workshop this Sunday, 7 PM. Register with my link, it takes 20 seconds:\n' + link;
+  }
+  function passHTML(a, m) {
+    var kids = a.children[m.code] || 0, B = state.frame === 'B', link = linkFor('r-' + m.code);
+    var gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(WORKSHOP.title + ' (prototype)') + '&dates=' + WORKSHOP.gcal +
+      '&details=' + encodeURIComponent('Prototype event from the Loop500 demo. Squad code: ' + m.code + '. In a real campaign the join link arrives on WhatsApp one hour before.');
+    var dots = [0, 1, 2].map(function (i) { return '<i class="' + (i < kids ? 'on' : '') + '">' + (i < kids ? ICON.check : '') + '</i>'; }).join('');
+    var colIdx = -1; a.colleges.forEach(function (c, i) { if (c.college === m.college) colIdx = i; });
+    var refIdx = -1; a.referrers.forEach(function (r, i) { if (r.code === m.code) refIdx = i; });
+    var next = find(C.TIERS, function (t) { return kids < t.at; });
+    return '<div class="lp">' +
+      '<p class="lp-proto">Prototype · sample data · not an official NxtWave page</p>' +
+      '<div class="ok-head"><span class="ok-icon">' + ICON.check + '</span><div><h2>You’re in, ' + esc(m.name.split(' ')[0]) + '.</h2><p>Seat ' + n0(m.seat) + ' · ' + WORKSHOP.when + ' · Online</p></div></div>' +
+      (m.fy ? '' : '<p class="invite">' + ICON.info + '<span>This session is built for the 2027 batch. You are registered, and counted separately from the final-year goal.</span></p>') +
+      '<a class="btn" href="' + esc(gcal) + '" target="_blank" rel="noopener">' + ICON.cal + 'Add to Google Calendar</a>' +
+      '<p class="fine">The join link comes to ' + esc(m.phoneMask || 'your WhatsApp') + ' one hour before we start.</p>' +
+      '<section class="ticket" aria-label="Your squad pass">' +
+        '<div class="ticket-top"><span class="eyebrow">Squad pass</span><span class="code">' + esc(m.code) + '</span><span class="who">' + esc(m.name) + ' · ' + esc(m.college) + '</span></div>' +
+        '<div class="ticket-cut"></div>' +
+        '<div class="ticket-body">' +
+          (B ? '<h3>Bring your project squad</h3><p>Final-year projects are built in teams. When 3 teammates join with your link, all four of you unlock the Final-Year Project Idea Pack.</p>'
+             : '<h3>Invite 3 friends</h3><p>Share your link. When 3 friends register, you unlock the Final-Year Project Idea Pack.</p>') +
+          '<div class="squad" role="img" aria-label="' + Math.min(kids, 3) + ' of 3 joined">' + dots + '<span>' + (kids >= 3 ? kids + ' joined' + (next ? ', ' + (next.at - kids) + ' more for the next unlock' : '') : kids + ' of 3 ' + (B ? 'teammates' : 'friends') + ' in') + '</span></div>' +
+          '<a class="btn btn-wa btn-block" href="' + esc(waLink(shareText(m))) + '" target="_blank" rel="noopener" data-action="share">' + ICON.chat + 'Share on WhatsApp</a>' +
+          '<button type="button" class="btn btn-block" data-action="copylink">' + ICON.copy + 'Copy my link</button>' +
+          '<p class="link-line mono">' + esc(link) + '</p>' +
+        '</div>' +
+      '</section>' +
+      '<section class="tiers" aria-label="Rewards">' + C.TIERS.map(function (t) {
+        var open = kids >= t.at;
+        return '<div class="tier' + (open ? ' open' : '') + '"><span class="ico">' + (open ? ICON.open : ICON.lock) + '</span><span><b>' + t.at + ' joined: ' + esc(t.name) + (open ? ' · unlocked' : '') + '</b><small>' + esc(t.detail) + '</small></span></div>';
+      }).join('') + '</section>' +
+      '<section class="rank"><span>' + (refIdx >= 0 ? 'You are <b>#' + (refIdx + 1) + '</b> of ' + n0(a.referrers.length) + ' students who have brought someone in.' : 'You are not on the leaderboard yet. One teammate puts you on it.') + '</span>' +
+        '<span>' + (colIdx >= 0 ? esc(m.college) + ' is <b>#' + (colIdx + 1) + '</b> of ' + a.colleges.length + ' colleges with <b>' + a.colleges[colIdx].fy + '</b> registered.' : esc(m.college) + ' is new on the board.') + '</span>' +
+        '<button type="button" class="link" data-action="screen" data-v="board">See the leaderboard</button></section>' +
+      '<section class="field"><span class="sec-label">One tap, so we can group you with your branch</span><div class="chips">' + C.BRANCHES.map(function (b) { return '<button type="button" class="chip-btn" data-action="branch" data-v="' + esc(b) + '" aria-pressed="' + (m.branch === b) + '">' + esc(b) + '</button>'; }).join('') + '</div></section>' +
+      '<p class="lp-foot">Hosted by NxtWave in this simulation · Built for a hiring challenge</p>' +
+    '</div>';
+  }
+  function boardHTML(a, m) {
+    var rows;
+    if (state.lb === 'students') {
+      var list = a.referrers.slice(0, 10), mine = -1;
+      if (m) a.referrers.forEach(function (r, i) { if (r.code === m.code) mine = i; });
+      rows = list.map(function (r, i) { return '<div class="lb-row' + (m && r.code === m.code ? ' me' : '') + '"><span class="pos">' + (i + 1) + '</span><span class="nm">' + esc(r.name) + (m && r.code === m.code ? ' (you)' : '') + '<small>' + esc(r.college) + '</small></span><span class="ct">' + r.count + '</span></div>'; }).join('');
+      if (m && mine >= 10) rows += '<div class="lb-row me"><span class="pos">' + (mine + 1) + '</span><span class="nm">' + esc(m.name) + ' (you)<small>' + esc(m.college) + '</small></span><span class="ct">' + a.referrers[mine].count + '</span></div>';
+      if (m && mine < 0) rows += '<div class="lb-row me"><span class="pos">–</span><span class="nm">' + esc(m.name) + ' (you)<small>Bring one teammate to get on the board</small></span><span class="ct">0</span></div>';
+    } else {
+      var mineC = -1; if (m) a.colleges.forEach(function (c, i) { if (c.college === m.college) mineC = i; });
+      rows = a.colleges.slice(0, 10).map(function (c, i) { return '<div class="lb-row' + (i === mineC ? ' me' : '') + '"><span class="pos">' + (i + 1) + '</span><span class="nm">' + esc(c.college) + (i === mineC ? ' (yours)' : '') + '</span><span class="ct">' + c.fy + '</span></div>'; }).join('');
+      if (m && mineC >= 10) rows += '<div class="lb-row me"><span class="pos">' + (mineC + 1) + '</span><span class="nm">' + esc(m.college) + ' (yours)</span><span class="ct">' + a.colleges[mineC].fy + '</span></div>';
+    }
+    return '<div class="lp">' +
+      '<p class="lp-proto">Prototype · sample data · not an official NxtWave page</p>' +
+      '<button type="button" class="btn btn-sm" data-action="screen" data-v="main" style="justify-self:start;align-self:flex-start">' + ICON.back + 'Back to ' + (m ? 'my pass' : 'the page') + '</button>' +
+      '<h2 class="lp-h" style="font-size:32px">Leaderboard</h2>' +
+      '<div class="seg" role="group" aria-label="Leaderboard type">' + seg('lb', 'students', 'Students', state.lb) + seg('lb', 'colleges', 'Colleges', state.lb) + '</div>' +
+      '<p class="fine">' + (state.lb === 'students' ? 'Teammates brought in. The top 5 squads share ₹500.' : 'Final-year registrations by college, as of Day ' + a.day + '.') + '</p>' +
+      '<div class="lb-list">' + rows + '</div>' +
+    '</div>';
+  }
+  function entryOptions(a, e) {
+    var act = a.captains.filter(function (c) { return c.status === 'active'; }), out = [];
+    var c1 = act[0] || a.captains[0], c2 = act[1];
+    if (c1) out.push({ v: 'c-' + c1.id + '-class', t: 'Class WhatsApp group · post by ' + c1.name + ', ' + c1.college });
+    if (c2) out.push({ v: 'c-' + c2.id + '-batch', t: 'Batch WhatsApp group · post by ' + c2.name + ', ' + c2.college });
+    var top = find(a.referrers, function (r) { return !r.live; });
+    if (top) out.push({ v: 'r-' + top.code, t: 'A friend’s squad link · ' + top.name + ', ' + top.college });
+    state.live.regs.forEach(function (r) { if (r.self) out.push({ v: 'r-' + r.code, t: 'Squad link of ' + r.name + ', registered in this browser' }); });
+    var p = sim().partners[1];
+    out.push({ v: 'p-' + p.id, t: 'Club broadcast · ' + p.label + ', ' + p.college });
+    out.push({ v: '', t: 'Direct, no tracked link' });
+    if (!find(out, function (o) { return o.v === e.token; })) out.unshift({ v: e.token, t: e.label });
+    return out;
+  }
+  function sideHTML(a, m) {
+    var e = entryInfo(state.entry), opts = entryOptions(a, e), ids = state.live.regs.filter(function (r) { return r.self; });
+    var kids = m ? (a.children[m.code] || 0) : 0, mine = state.live.regs.length;
+    return '<section class="card">' +
+        '<div class="card-head"><h3>Demo controls</h3><span class="sub">Change how this visitor arrives and what they see</span></div>' +
+        '<div class="ctl-grid">' +
+          '<div class="field wide"><label for="ctl-entry">This visitor arrives from</label><select id="ctl-entry" data-change="entry">' + opts.map(function (o) { return '<option value="' + esc(o.v) + '"' + (o.v === e.token ? ' selected' : '') + '>' + esc(o.t) + '</option>'; }).join('') + '</select></div>' +
+          '<div class="field"><span class="lbl">Landing headline (Test 1)</span><div class="seg" role="group" aria-label="Landing headline">' + seg('hook', 'A', 'A · Learning', state.hook) + seg('hook', 'B', 'B · Outcome', state.hook) + '</div></div>' +
+          '<div class="field"><span class="lbl">Referral framing (Test 2)</span><div class="seg" role="group" aria-label="Referral framing">' + seg('frame', 'A', 'A · Invite 3', state.frame) + seg('frame', 'B', 'B · Squad', state.frame) + '</div></div>' +
+          '<div class="field wide"><label for="ctl-id">Viewing as</label><select id="ctl-id" data-change="identity"><option value="">New visitor, not registered yet</option>' + ids.map(function (r) { return '<option value="' + esc(r.id) + '"' + (m && r.id === m.id ? ' selected' : '') + '>' + esc(r.name) + ' · ' + esc(r.code) + '</option>'; }).join('') + '</select></div>' +
+        '</div>' +
+        '<div class="msg-actions" style="margin-top:14px">' +
+          '<button type="button" class="btn btn-sm btn-primary" data-action="teammate"' + (m ? '' : ' disabled') + '>Simulate a teammate joining</button>' +
+          '<button type="button" class="btn btn-sm" data-action="newvisitor">New visitor</button>' +
+          '<button type="button" class="btn btn-sm" data-action="reset">' + (confirmReset ? 'Press again to clear my session' : 'Reset my session') + '</button>' +
+        '</div>' +
+        (m ? '' : '<p class="fine" style="margin-top:8px">Register first, then add teammates to see the pass unlock.</p>') +
+      '</section>' +
+      '<section class="card">' +
+        '<div class="card-head"><h3>What the tracker just recorded</h3><button type="button" class="link" data-action="goto" data-v="mission">Open Mission control</button></div>' +
+        '<div class="mini-stats">' +
+          '<div class="mini"><b>' + n0(a.total) + '</b><span>final-year registrations, Day ' + a.day + '</span></div>' +
+          '<div class="mini"><b>' + mine + '</b><span>added from this browser</span></div>' +
+          '<div class="mini"><b>' + (m ? kids : '–') + '</b><span>' + (m ? 'in ' + esc(m.name.split(' ')[0]) + '’s squad' : 'your squad, once registered') + '</span></div>' +
+        '</div>' +
+        '<ul class="feed" style="margin-top:12px">' + (state.live.events.length ? state.live.events.slice(0, 14).map(function (x) { return '<li><span class="k">' + esc(x.k) + '</span><span>' + esc(x.text) + '</span></li>'; }).join('') : '<li class="empty">Nothing yet. Events appear here as you use the phone.</li>') + '</ul>' +
+      '</section>';
+  }
+  function renderStudent() {
+    var a = an(), m = me(), ph = $('#phone'), top = ph.scrollTop, key = (m ? m.id : 'new') + '|' + state.screen;
+    ph.innerHTML = state.screen === 'board' ? boardHTML(a, m) : (m ? passHTML(a, m) : landingHTML(a));
+    ph.scrollTop = ph.dataset.key === key ? top : 0; ph.dataset.key = key;
+    $('#side').innerHTML = sideHTML(a, m);
+    $('#stuGrid').classList.toggle('via-link', !!state.handledToken);
+  }
+
+  /* ---------- charts ---------- */
+  function paceSVG(W, a) {
+    var H = W < 520 ? 250 : 330, m = { l: 36, r: 40, t: 20, b: 28 }, pw = W - m.l - m.r, ph = H - m.t - m.b, i;
+    var planCum = [0].concat(a.plan.days.map(function (d) { return d.cum; })), act = [0];
+    for (i = 0; i < a.day; i++) act.push(a.byDay[i].cum);
+    var proj = null, lev = a.projection.withLever;
+    if (a.day < C.DAYS && !a.projection.launchDay) { proj = [a.total]; var c = a.total; a.projection.days.forEach(function (d) { c += d.total; proj.push(c); }); }
+    var ymax = niceMax(Math.max(planCum[7], a.total, proj ? proj[proj.length - 1] : 0, lev || 0, C.GOAL) * 1.03, 100), step = ymax > 800 ? 200 : 100;
+    var x = function (d) { return m.l + pw * d / 7; }, y = function (v) { return m.t + ph * (1 - v / ymax); };
+    var pts = function (arr, from) { return arr.map(function (v, j) { return x(from + j).toFixed(1) + ',' + y(v).toFixed(1); }).join(' '); };
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Cumulative final-year registrations against plan">';
+    for (var v = 0; v <= ymax; v += step) s += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(' + (v === 0 ? '--line-2' : '--line') + ')" stroke-width="1"/><text class="tk" x="' + (m.l - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>';
+    for (i = 1; i <= 7; i++) s += '<text x="' + x(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + (W < 520 ? 'D' + i : 'Day ' + i) + '</text>';
+    s += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(C.GOAL) + '" y2="' + y(C.GOAL) + '" stroke="var(--ink-2)" stroke-width="1.25"/><text class="lab2" x="' + (m.l + 6) + '" y="' + (y(C.GOAL) - 6) + '" style="font-weight:600">Goal 500</text>';
+    s += '<polyline points="' + pts(planCum, 0) + '" fill="none" stroke="var(--s-other)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>';
+    s += '<polygon points="' + pts(act, 0) + ' ' + x(a.day).toFixed(1) + ',' + y(0) + ' ' + x(0) + ',' + y(0) + '" fill="var(--s1)" opacity="0.1"/>';
+    if (proj) s += '<polyline points="' + pts(proj, a.day) + '" fill="none" stroke="var(--s1)" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>';
+    if (lev) s += '<line x1="' + x(a.day) + '" y1="' + y(a.total) + '" x2="' + x(7) + '" y2="' + y(lev) + '" stroke="var(--s2)" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>';
+    s += '<polyline points="' + pts(act, 0) + '" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    // end labels on the right edge, nudged apart so they never overlap
+    var labels = [{ v: planCum[7], t: n0(planCum[7]), c: '--s-other' }];
+    if (proj) labels.push({ v: proj[proj.length - 1], t: n0(proj[proj.length - 1]), c: '--s1', ring: true });
+    if (lev) labels.push({ v: lev, t: n0(lev), c: '--s2', ring: true });
+    if (a.day === C.DAYS) labels.push({ v: a.total, t: n0(a.total), c: '--s1', bold: true });
+    labels.forEach(function (l) { l.y = y(l.v); });
+    labels.sort(function (p, q) { return p.y - q.y; });
+    for (i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 14) labels[i].y = labels[i - 1].y + 14;
+    labels.forEach(function (l) {
+      if (l.ring) s += '<circle cx="' + x(7) + '" cy="' + y(l.v) + '" r="4" fill="var(--surface)" stroke="var(' + l.c + ')" stroke-width="2"/>';
+      s += '<text class="' + (l.bold ? 'val' : 'lab2') + ' tk" x="' + (x(7) + 9) + '" y="' + (l.y + 4) + '">' + l.t + '</text>';
+    });
+    s += '<circle cx="' + x(a.day) + '" cy="' + y(a.total) + '" r="5" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/>';
+    if (a.day < C.DAYS) s += '<text class="val tk" x="' + x(a.day) + '" y="' + (y(a.total) - 12) + '" text-anchor="middle">' + n0(a.total) + '</text>';
+    for (i = 1; i <= 7; i++) {
+      var rows = [];
+      if (i <= a.day) rows.push(['Actual', n0(act[i]), '--s1']);
+      rows.push(['Plan', n0(planCum[i]), '--s-other']);
+      if (proj && i > a.day) rows.push(['Projected, left alone', n0(proj[i - a.day]), '--s1']);
+      if (lev && i === 7) rows.push(['With the new captains', n0(lev), '--s2']);
+      s += '<g class="hit-g" tabindex="0"' + tip({ t: 'Day ' + i + ' · ' + DAY_NAMES[i - 1], rows: rows }) + '><line class="cross" x1="' + x(i) + '" x2="' + x(i) + '" y1="' + m.t + '" y2="' + y(0) + '"/><rect class="hit" x="' + (x(i) - pw / 14) + '" y="' + m.t + '" width="' + (pw / 7) + '" height="' + ph + '"/></g>';
+    }
+    return s + '</svg>';
+  }
+  var SRC = [['cap', 'Captain posts', '--s1'], ['ref', 'Squad referrals', '--s2'], ['par', 'Partner blasts', '--s3'], ['dir', 'Direct', '--s-other']];
+  function stackSVG(W, days, upto, opts) {
+    var H = W < 520 ? 230 : 270, m = { l: 36, r: opts.goal ? 40 : 8, t: 22, b: 28 }, pw = W - m.l - m.r, ph = H - m.t - m.b, slot = pw / 7, bw = Math.min(24, slot * 0.5);
+    var ymax = niceMax(Math.max.apply(null, days.map(function (d) { return Math.max(d.total, d.planTick || 0); }).concat(opts.goal || 0)) * 1.04, opts.step), step = ymax / (ymax / opts.step > 8 ? ymax / (opts.step * 2) : ymax / opts.step);
+    var y = function (v) { return m.t + ph * (1 - v / ymax); }, s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(opts.label) + '">';
+    for (var v = 0; v <= ymax + 0.01; v += step) s += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(' + (v === 0 ? '--line-2' : '--line') + ')" stroke-width="1"/><text class="tk" x="' + (m.l - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + Math.round(v) + '</text>';
+    if (opts.goal) s += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(opts.goal) + '" y2="' + y(opts.goal) + '" stroke="var(--ink-2)" stroke-width="1.25"/><text class="lab2" x="' + (m.l + 6) + '" y="' + (y(opts.goal) - 6) + '" style="font-weight:600">Goal ' + opts.goal + '</text>';
+    days.forEach(function (d, i) {
+      var cx = m.l + slot * (i + 0.5), x0 = cx - bw / 2, base = y(0), rows = [], g = '';
+      s += '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle">' + (W < 520 ? 'D' + (i + 1) : 'Day ' + (i + 1)) + '</text>';
+      if (i < upto) {
+        var segs = SRC.filter(function (k) { return d[k[0]] > 0; });
+        segs.forEach(function (k, j) {
+          var h = d[k[0]] / ymax * ph, top = j === segs.length - 1, hh = Math.max(top ? h : h - 2, 1);
+          base -= h;
+          g += (top ? topRounded(x0, base, bw, hh, 4) : '<rect x="' + x0 + '" y="' + (base + 2) + '" width="' + bw + '" height="' + hh + '"') + ' fill="var(' + k[2] + ')"/>';
+          rows.push([k[1], n0(d[k[0]]), k[2]]);
+        });
+        g += '<text class="val tk" x="' + cx + '" y="' + (y(d.total) - 6) + '" text-anchor="middle">' + n0(d.total) + '</text>';
+        rows.push(['Total', n0(d.total), null]);
+      }
+      if (d.planTick !== undefined) { g += '<line x1="' + (x0 - 6) + '" x2="' + (x0 + bw + 6) + '" y1="' + y(d.planTick) + '" y2="' + y(d.planTick) + '" stroke="var(--ink)" stroke-width="2"/>'; rows.push(['Plan for the day', n0(d.planTick), '--ink']); }
+      s += '<g class="col" tabindex="0"' + tip({ t: 'Day ' + (i + 1) + ' · ' + DAY_NAMES[i] + (opts.cum ? ', cumulative' : ''), rows: rows }) + '><rect class="hit" x="' + (cx - slot / 2) + '" y="' + m.t + '" width="' + slot + '" height="' + ph + '"/>' + g + '</g>';
+    });
+    return s + '</svg>';
+  }
+  function legendHTML(items) { return '<div class="legend">' + items.map(function (it) { return '<span><i class="' + (it[2] || '') + '" style="' + (it[2] ? 'border-color' : 'background') + ':var(' + it[1] + ')"></i>' + esc(it[0]) + '</span>'; }).join('') + '</div>'; }
+  var CHARTS = {
+    pace: function (W) { return paceSVG(W, an()); },
+    daily: function (W) { var a = an(); return stackSVG(W, a.byDay.map(function (d, i) { return C.assign({}, d, { planTick: a.plan.days[i].total }); }), a.day, { step: 50, label: 'New final-year registrations per day by source' }); },
+    forecast: function (W) {
+      var f = C.forecast(state.fc), cc = 0, cr = 0, cp = 0;
+      return stackSVG(W, f.days.map(function (d) { cc += d.cap; cr += d.ref; cp += d.par; return { cap: cc, ref: cr, par: cp, dir: 0, total: d.cum }; }), 7, { step: 100, goal: C.GOAL, cum: true, label: 'Forecast cumulative registrations by source' });
+    }
+  };
+  function drawCharts(root) { $$('[data-chart]', root).forEach(function (el) { var W = Math.max(280, Math.floor(el.clientWidth)); el.innerHTML = CHARTS[el.dataset.chart](W); }); }
+
+  /* ---------- mission control ---------- */
+  function expHTML(e) {
+    var hyp = { hook: 'In placement season, an outcome promise turns more visits into registrations than a learning promise.',
+      incentive: 'Final-year projects are built in teams of 3 or 4, so asking for the squad gets more shares than asking for friends.',
+      sender: 'A classmate’s post brings at least 1.5× the final-year registrations of an official blast, per 100 students reached.' }[e.id];
+    var act = { hook: 'Shipped to every captain and the landing page.', incentive: 'Shipped to every registrant.', sender: 'The reserve and the remaining hours go to captains.' }[e.id];
+    var foot = { hook: 'Metric: visits that end in a registration. Split by captain, same form, only the first line and the headline change.',
+      incentive: 'Metric: share of registrants who tap share, with K as the check. Framing is randomised per registrant.',
+      sender: 'Metric: final-year registrations per 100 final-years reached, Days 2 to 4, each sender on its own tracked link.' }[e.id];
+    var s = e.stat, sig = s && s.confidence >= 0.95 && s.p2 > s.p1, maxRate = Math.max(e.arms[0].rate || 0, e.arms[1].rate || 0) || 1, readDay = C.dayOf(e.readAt - 0.01);
+    var val = function (x) { return x.rate === null ? '–' : (e.id === 'sender' ? (x.rate * 100).toFixed(1) + ' per 100' : pct(x.rate)); };
+    var arms = e.arms.map(function (x, i) {
+      return '<div class="arm' + (i === 1 && (sig || e.status !== 'decided') ? ' win' : '') + '"><div class="top"><span>' + esc(x.label) + '<small>' + esc(x.sub) + '</small></span><b>' + val(x) + '</b></div>' +
+        '<div class="track"><i style="width:' + (x.rate ? Math.max(2, x.rate / maxRate * 100) : 0).toFixed(1) + '%"></i></div>' +
+        '<span class="n">' + n0(x.x) + ' of ' + n0(x.n) + ' ' + x.unit + (x.k !== undefined && x.k !== null ? ' · K ' + x.k.toFixed(2) : '') + (x.fyPct !== undefined && x.fyPct !== null ? ' · ' + pct(x.fyPct) + ' of registrants final-year' : '') + '</span></div>';
+    }).join('');
+    var res, st;
+    if (e.status === 'collecting') { st = pill('mute', null, 'Collecting'); res = 'Not enough traffic to read yet. It is read on Day ' + readDay + '.'; }
+    else if (e.status === 'running') { st = pill('info', 'info', 'Running'); res = s.p2 > s.p1 ? '<b>' + esc(e.arms[1].label) + '</b> leads by ' + pct(s.lift) + ' at ' + conf(s.confidence) + ' confidence so far. It is read on Day ' + readDay + '.' : 'No lead yet. It is read on Day ' + readDay + '.'; }
+    else if (sig) { st = pill('good', 'check', 'Decided, Day ' + readDay); res = '<b>' + esc(e.arms[1].label) + ' wins:</b> +' + pct(s.lift) + ' at ' + conf(s.confidence) + ' confidence. ' + act; }
+    else { st = pill('mute', null, 'Read, Day ' + readDay); res = 'No clear winner (' + conf(s.confidence) + ' confidence). Kept the control.'; }
+    return '<section class="card exp c4"><div class="card-head"><h3>' + esc(e.title) + '</h3>' + st + '</div><p class="hyp">' + hyp + '</p>' + arms + '<p class="res">' + res + '</p><p class="fine">' + foot + '</p></section>';
+  }
+  function nudgeText(a) {
+    var top = a.colleges[0], c = a.captains[0];
+    return 'Hey! Your college link for Sunday’s AI project session is live, and ' + (top ? top.college + ' already has ' + top.fy + ' registrations' : 'the first colleges are on the board') + '. One post in your class group tonight at 7 PM is all it takes. The message is ready to paste, and the top 3 captains split ₹1,000. Want me to resend your link?';
+  }
+  function missionHTML() {
+    var a = an(), p = a.projection, dg = a.diagnosis, rec = C.recommend(a), s = sim(), d = a.day, planToday = a.plan.days[d - 1].total, gap = Math.round(a.planCum) - a.total;
+    var statusPill = { behind: pill('bad', 'alert', 'Behind'), ontrack: pill('info', 'info', 'On track for 500'), hit: pill('good', 'check', 'Goal reached'), missed: pill('bad', 'alert', 'Missed') }[dg.status];
+    var statusLine = dg.status === 'hit' ? 'Crossed 500 on Day ' + C.dayOf(a.crossedAt) + '.' : (d === 1 ? 'Launch day. The plan line starts moving tomorrow.' : (gap > 0 ? n0(gap) + ' behind the plan line.' : n0(-gap) + ' ahead of the plan line.') + (d < 7 ? ' Projected finish: ' + n0(p.total) + '.' : ''));
+    var tile = function (lab, val, note) { return '<div class="tile"><span class="lab">' + lab + '</span><span class="val">' + val + '</span><span class="note">' + note + '</span></div>'; };
+    var capNote = a.onboarding ? a.onboarding + ' more go live tomorrow' : (a.idleCaptains ? a.idleCaptains + ' recruited, not posting' : (d === 1 ? 'Wave 1 goes out on Day 2' : 'Every recruited captain is posting'));
+    var tiles =
+      tile('New today', '+' + n0(a.today), 'Plan for Day ' + d + ': ' + n0(planToday)) +
+      tile('Required rate', a.total >= C.GOAL ? 'Done' : (d < 7 ? n0(Math.ceil(a.required)) + ' <small>a day</small>' : '–'), a.total >= C.GOAL ? 'Goal is banked' : (d < 7 ? 'to reach 500 in the ' + a.daysLeft + (a.daysLeft === 1 ? ' day' : ' days') + ' left' : 'Registration is closed')) +
+      tile('Projected finish', d < 7 ? n0(p.total) : n0(a.total), d === 1 ? 'Equals the plan until Wave 1 data arrives' : (d < 7 ? (p.withLever ? '<b>' + n0(p.withLever) + '</b> with tonight’s new captains' : 'if nothing changes from here') : 'Final count')) +
+      tile('Active captains', a.activeCaptains + ' <small>of ' + C.PLAN.captains + ' planned</small>', capNote) +
+      tile('Referrals per registrant', a.measured.k === null ? '–' : a.measured.k.toFixed(2), 'K. Plan: ' + C.PLAN.k.toFixed(2)) +
+      tile('Cost per registration', a.total ? '₹' + a.costPerReg.toFixed(2) : '–', '₹2,000 ÷ registrations so far');
+    var drv = dg.drivers.map(function (x) {
+      var f = function (v) { return v === null || v === undefined ? '–' : (x.fmt === 'int' ? String(v) : (x.fmt === 'pct' ? pct(v) : (x.fmt === 'k' ? v.toFixed(2) : pct(v)))); };
+      var imp = x.impact === null ? '<span class="delta flat">–</span>' : '<span class="delta ' + (x.impact < -0.015 ? 'down' : (x.impact > 0.015 ? 'up' : 'flat')) + '">' + (x.impact > 0 ? '+' : '') + pct(x.impact) + '</span>';
+      return '<tr><td>' + esc(x.label) + '</td><td class="r">' + f(x.plan) + '</td><td class="r">' + f(x.actual) + '</td><td class="r">' + imp + '</td></tr>';
+    }).join('');
+    var log = C.decisionLog(s, d * 24).reverse();
+    var cols = a.colleges.slice(0, 10), colMax = cols.length ? cols[0].fy : 1;
+    var caps = state.capAll ? a.captains : a.captains.slice(0, 8);
+    var stLabel = { active: 'Posting', idle: 'No post yet', onboarding: 'Joins tomorrow', scheduled: 'Scheduled' };
+    var reserve = d < 4 ? 'Held until Day 4 data' : (state.lever ? 'Released Day 4: bounty for new captains' : 'Unspent');
+    var leak = (function () {
+      var st = [['opened the page but did not start the form', a.funnel.visits, a.funnel.started], ['started the form but did not finish', a.funnel.started, a.funnel.registered], ['registered but did not share', a.funnel.registered, a.funnel.shared]];
+      var w = st.slice().sort(function (p1, p2) { return (p2[1] - p2[2]) - (p1[1] - p1[2]); })[0];
+      return a.funnel.visits ? 'Biggest leak by headcount: <b>' + n0(w[1] - w[2]) + '</b> people ' + w[0] + '.' : '';
+    })();
+    var fn = [['Opened the page', a.funnel.visits, null], ['Started the form', a.funnel.started, a.funnel.visits], ['Registered', a.funnel.registered, a.funnel.started], ['Shared their link', a.funnel.shared, a.funnel.registered], ['Brought in a teammate', a.funnel.referrers, a.funnel.shared]];
+    return '<div class="view-head"><div><p class="eyebrow">Sample data · simulated 7-day campaign</p><h2>Mission control</h2><p>One screen that answers three questions every day: where are we against 500, why, and what do I do tonight.</p></div></div>' +
+      '<div class="controls"><div class="field"><span class="lbl">Campaign day</span><div class="seg" role="group" aria-label="Campaign day">' + [1, 2, 3, 4, 5, 6, 7].map(function (i) { return seg('day', i, 'D' + i + '<small> ' + DAY_NAMES[i - 1] + '</small>', d); }).join('') + '</div></div>' +
+        '<div class="field"><span class="lbl">&nbsp;</span><button type="button" class="btn btn-sm" data-action="play">' + (playing ? 'Pause' : 'Replay the week') + '</button></div><span class="grow"></span>' +
+        '<button type="button" class="switch" role="switch" aria-checked="' + state.lever + '" data-action="lever"><i></i><span>Day 4 decision: add captains<br><small class="fine">Switch off to see the same week without it</small></span></button></div>' +
+      '<div class="score"><section class="card hero"><p class="eyebrow">The chase · Day ' + d + ' of 7 · ' + DAY_NAMES[d - 1] + '</p>' +
+          '<div class="hero-num"><b>' + n0(a.total) + '</b><span>of 500 final-year registrations</span></div>' +
+          '<div class="meter" role="img" aria-label="' + a.total + ' of 500. Plan to date ' + Math.round(a.planCum) + '."><i style="width:' + Math.min(100, a.total / C.GOAL * 100).toFixed(1) + '%"></i><u style="left:' + Math.min(100, a.planCum / C.GOAL * 100).toFixed(1) + '%"></u></div>' +
+          '<div class="meter-key"><span><span class="tick"></span>Plan to date: ' + n0(a.planCum) + '</span><span>Goal: 500</span></div>' +
+          '<div class="msg-actions" style="align-items:center">' + statusPill + '<span class="sub">' + statusLine + '</span></div></section>' +
+        '<div class="tiles">' + tiles + '</div></div>' +
+      '<div class="grid">' +
+        '<section class="card c8"><div class="card-head"><h3>Registrations against the plan line</h3><button type="button" class="link" data-action="table" data-v="pace">' + (state.tables.pace ? 'Show chart' : 'Show table') + '</button></div>' +
+          legendHTML([['Actual', '--s1', 'ln'], ['Plan', '--s-other', 'dash']].concat(d > 1 && d < 7 ? [['Projected, left alone', '--s1', 'dash']] : []).concat(p.withLever ? [['With the new captains', '--s2', 'dash']] : [])) +
+          (state.tables.pace ? tableHTML(['Day', 'Actual', 'Plan', 'Gap'], a.plan.days.map(function (x, i) { return ['Day ' + (i + 1), i < d ? n0(a.byDay[i].cum) : '–', n0(x.cum), i < d ? String(a.byDay[i].cum - Math.round(x.cum)) : '–']; })) : '<div class="chart" data-chart="pace"></div>') + '</section>' +
+        '<section class="card call c4"><div class="card-head"><h3>Tonight’s call</h3><span class="sub">Day ' + d + '</span></div>' +
+          '<div class="call-box ' + rec.tone + '"><h4>' + ICON[rec.tone === 'good' ? 'check' : (rec.tone === 'info' ? 'info' : 'flag')] + '<span>' + esc(rec.title) + '</span></h4><p>' + esc(rec.text) + '</p>' + (rec.nudge ? '<button type="button" class="btn btn-sm" data-action="nudge" style="justify-self:start">' + ICON.copy + 'Copy the nudge message</button>' : '') + '</div>' +
+          '<div><table class="drivers"><thead><tr><th>Input</th><th class="r">Plan</th><th class="r">Now</th><th class="r">Effect on the week</th></tr></thead><tbody>' + drv + '</tbody></table>' +
+          '<p class="tbl-note">Effect: what this input’s gap does to the week’s total in the forecast model, so a miss on captains ranks above the same miss on K.</p></div></section>' +
+        '<section class="card c6"><div class="card-head"><h3>New registrations per day, by source</h3><button type="button" class="link" data-action="table" data-v="daily">' + (state.tables.daily ? 'Show chart' : 'Show table') + '</button></div>' +
+          legendHTML(SRC.map(function (k) { return [k[1], k[2]]; }).concat([['Plan for the day', '--ink', 'ln']])) +
+          (state.tables.daily ? tableHTML(['Day', 'Captain posts', 'Squad referrals', 'Partner blasts', 'Direct', 'Total', 'Plan'], a.byDay.map(function (x, i) { return i < d ? ['Day ' + (i + 1), x.cap, x.ref, x.par, x.dir, x.total, n0(a.plan.days[i].total)] : ['Day ' + (i + 1), '–', '–', '–', '–', '–', n0(a.plan.days[i].total)]; })) : '<div class="chart" data-chart="daily"></div>') + '</section>' +
+        '<section class="card c6"><div class="card-head"><h3>Funnel: where people drop</h3><span class="sub">All visitors to date</span></div><div class="funnel">' +
+          fn.map(function (r, i) { return '<div class="fn-row"><span class="nm">' + r[0] + (r[2] ? '<small>' + pct(r[1] / r[2]) + ' of the step above</small>' : '<small>&nbsp;</small>') + '</span><span class="fn-bar"><span class="track"><i style="width:' + (a.funnel.visits ? Math.max(1, r[1] / a.funnel.visits * 100) : 0).toFixed(1) + '%;background:var(--f' + (i + 1) + ')"></i></span><b>' + n0(r[1]) + '</b></span></div>'; }).join('') +
+          '</div><p class="leak">' + leak + ' ' + n0(a.total) + ' of the ' + n0(a.all) + ' registered are final-year and count toward 500.</p></section>' +
+        a.experiments.map(expHTML).join('') +
+        '<section class="card c7"><div class="card-head"><h3>Campus Captains</h3><span class="sub">' + a.activeCaptains + ' posting · ' + a.idleCaptains + ' silent' + (a.onboarding ? ' · ' + a.onboarding + ' joining' : '') + '</span></div><div class="scroll-x"><table class="tbl-wide"><thead><tr><th>#</th><th>Captain</th><th>Status</th><th class="r">Posts</th><th class="r">Reached</th><th class="r">Visits</th><th class="r">Direct</th><th class="r">With referrals</th></tr></thead><tbody>' +
+          caps.map(function (c, i) { return '<tr><td class="num">' + (i + 1) + '</td><td>' + esc(c.name) + (c.lever ? ' ' + pill('info', null, 'Nominated') : '') + '<br><span class="fine">' + esc(c.college) + '</span></td><td><span class="st ' + c.status + '">' + stLabel[c.status] + '</span><br><span class="fine">' + esc(c.via) + '</span></td><td class="r">' + c.posts + '</td><td class="r">' + n0(c.reach) + '</td><td class="r">' + c.visits + '</td><td class="r">' + c.direct + '</td><td class="r"><b>' + c.tree + '</b></td></tr>'; }).join('') +
+          '</tbody></table></div><div class="msg-actions" style="margin-top:10px"><button type="button" class="btn btn-sm" data-action="capall">' + (state.capAll ? 'Show the top 8' : 'Show all ' + a.captains.length) + '</button><span class="tbl-note" style="margin:0">Prizes go to the top 3 on “with referrals”: final-year registrations in the captain’s whole tree.</span></div></section>' +
+        '<section class="card c5"><div class="card-head"><h3>Decision log</h3><span class="sub">Newest first</span></div><ul class="log">' + log.map(function (l) { return '<li' + (l.key ? ' class="key"' : '') + '><span class="d">Day ' + l.day + '</span><span><b>' + esc(l.title) + '</b><p>' + esc(l.text) + '</p></span></li>'; }).join('') + '</ul></section>' +
+        '<section class="card c7"><div class="card-head"><h3>Channels</h3><span class="sub">Scale what converts, stop what does not</span></div><div class="scroll-x"><table class="tbl-wide"><thead><tr><th>Channel</th><th class="r">Visits</th><th class="r">Registered</th><th class="r">Rate</th><th class="r">Final-year</th><th class="r">Shared</th></tr></thead><tbody>' +
+          a.channels.map(function (c) { return '<tr><td>' + esc(c.label) + '</td><td class="r">' + n0(c.visits) + '</td><td class="r">' + n0(c.regs) + '</td><td class="r">' + pct(c.cvr) + '</td><td class="r">' + pct(c.fyPct) + '</td><td class="r">' + pct(c.shareRate) + '</td></tr>'; }).join('') +
+          '</tbody></table></div><p class="tbl-note">Final-year: share of that channel’s registrants who graduate in 2027. Club broadcasts reach juniors too, which is why they count for less.</p></section>' +
+        '<section class="card c5"><div class="card-head"><h3>Colleges</h3><span class="sub">' + a.colleges.length + ' on the board</span></div><div class="bars">' +
+          cols.map(function (c) { return '<div class="bar-row"><span class="nm" title="' + esc(c.college) + '">' + esc(c.college) + '</span><span class="track"><i style="width:' + (c.fy / colMax * 100).toFixed(1) + '%"></i></span><b>' + c.fy + '</b></div>'; }).join('') + '</div></section>' +
+        '<section class="card c5"><div class="card-head"><h3>Budget: ₹2,000</h3><span class="sub">Recognition, not media</span></div><table class="budget"><tbody>' +
+          C.BUDGET_LINES.map(function (b) { return '<tr><td>' + esc(b.label) + '<small>' + esc(b.key === 'reserve' ? reserve : b.detail) + '</small></td><td>₹' + n0(b.amount) + '</td></tr>'; }).join('') +
+          '<tr><td><b>Cost per final-year registration</b><small>At the goal of 500 it is ₹4.00</small></td><td>' + (a.total ? '₹' + a.costPerReg.toFixed(2) : '–') + '</td></tr></tbody></table></section>' +
+        '<section class="card c7"><div class="card-head"><h3>Data quality and export</h3><span class="sub">What counts toward 500</span></div><dl class="kv">' +
+          '<dt>Final-year (2027) registrations, counted</dt><dd>' + n0(a.total) + '</dd>' +
+          '<dt>Other years, stored but not counted</dt><dd>' + n0(a.nonFy) + ' (' + pct(a.all ? a.nonFy / a.all : 0) + ')</dd>' +
+          '<dt>Registrations added from this browser</dt><dd>' + state.live.regs.length + '</dd>' +
+          '<dt>Duplicate WhatsApp numbers blocked in this browser</dt><dd>' + state.dupes + '</dd></dl>' +
+          '<div class="msg-actions" style="margin-top:12px"><button type="button" class="btn btn-sm" data-action="csv" data-v="copy">' + ICON.copy + 'Copy registrations as CSV</button>' + (CAN_SAVE_FILES && !isEmbedded() ? '<button type="button" class="btn btn-sm" data-action="csv" data-v="download">Download CSV</button>' : '') + '</div>' +
+          '<p class="tbl-note">The export has no phone numbers. Prizes are paid only on verified registrations: one WhatsApp number, 2027 batch, joined the workshop group.</p></section>' +
+      '</div>';
+  }
+  function csv() {
+    var a = an(), rows = [['seat', 'day', 'name', 'college', 'grad_year', 'counts_toward_500', 'source', 'channel', 'captain', 'referred_by', 'headline', 'framing', 'shared', 'record']];
+    var all = sim().regs.filter(function (r) { return r.t < state.day * 24; }).concat(state.live.regs);
+    all.forEach(function (r, i) { rows.push([r.seat || i + 1, r.live ? a.day : C.dayOf(r.t), r.name, r.college, r.year, r.fy ? 'yes' : 'no', r.src, C.channelKey(r), r.rootType === 'captain' ? r.rootId : '', r.refBy || '', r.hook, r.inc, r.shared ? 'yes' : 'no', r.live ? 'this browser' : 'simulated']); });
+    return rows.map(function (r) { return r.map(function (c) { c = String(c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(','); }).join('\n');
+  }
+
+  /* ---------- forecast ---------- */
+  var SLIDERS = [
+    { k: 'captains', label: 'Active captains', min: 5, max: 60, step: 1, f: function (v) { return String(v); }, hint: 'The one input I control directly. Plan: recruit 30, expect 24 to post.' },
+    { k: 'reach', label: 'Final-years reached per captain', min: 100, max: 600, step: 10, f: function (v) { return String(v); }, hint: 'Class group (about 65) + batch group (about 190) + hostel or project groups (about 55).' },
+    { k: 'ctr', label: 'Click rate', min: 0.04, max: 0.25, step: 0.005, f: function (v) { return pct(v, 1); }, hint: 'Share of students reached who open the link, across every post in the week.' },
+    { k: 'cvr', label: 'Registration rate', min: 0.15, max: 0.65, step: 0.01, f: function (v) { return pct(v); }, hint: 'Share of visitors who finish the three-field form.' },
+    { k: 'k', label: 'Referrals per registrant (K)', min: 0, max: 0.8, step: 0.01, f: function (v) { return v.toFixed(2); }, hint: 'About 30% share, and each sharer lands about 1.2 teammates: 0.35.' },
+    { k: 'partners', label: 'Club and placement-cell blasts', min: 0, max: 20, step: 1, f: function (v) { return String(v); }, hint: 'Each reaches about 250 final-years at 8% click and 35% registration.' }
+  ];
+  function fcParams() { if (!state.fc) state.fc = pickParams(C.PLAN); return state.fc; }
+  function pickParams(p) { return { captains: p.captains, reach: p.reach, ctr: p.ctr, cvr: p.cvr, k: p.k, partners: p.partners, partnerCtr: p.partnerCtr, partnerCvr: p.partnerCvr }; }
+  function fcOutHTML() {
+    var p = fcParams(), f = C.forecast(p), need = C.captainsNeeded(p), diff = Math.round(f.total) - C.GOAL;
+    var lo = C.forecast(C.scaleRates(p, 0.8)), hi = C.forecast(C.scaleRates(p, 1.2));
+    var tile = function (lab, val, note) { return '<div class="tile"><span class="lab">' + lab + '</span><span class="val">' + val + '</span><span class="note">' + note + '</span></div>'; };
+    return '<div class="fc-head"><div class="fc-total"><b>' + n0(f.total) + '</b><span>final-year registrations by Day 7</span></div>' +
+        '<div class="msg-actions" style="align-items:center">' + (diff >= 0 ? pill('good', 'check', n0(diff) + ' above the goal') : pill('bad', 'alert', n0(-diff) + ' short of the goal')) + '<span class="sub">' + (f.crossDay ? 'Crosses 500 on Day ' + f.crossDay + '.' : 'Does not reach 500 in the week.') + '</span></div></div>' +
+      '<div class="tiles">' +
+        tile('Per active captain', f.perCaptain.toFixed(1), n0(f.perCaptainDirect * 10) / 10 + ' direct, the rest through their squads') +
+        tile('Captains needed for 500', need === null ? '400+' : String(need), 'with the partner blasts as set') +
+        tile('Cost per registration', f.total ? '₹' + f.costPerReg.toFixed(2) : '–', '₹2,000 ÷ ' + n0(f.total)) +
+      '</div>' +
+      '<div><div class="card-head"><h3>How the count builds, day by day</h3><button type="button" class="link" data-action="table" data-v="forecast">' + (state.tables.forecast ? 'Show chart' : 'Show table') + '</button></div>' +
+        legendHTML(SRC.slice(0, 3).map(function (k) { return [k[1], k[2]]; })) +
+        (state.tables.forecast ? tableHTML(['Day', 'Captain posts', 'Squad referrals', 'Partner blasts', 'New', 'Cumulative'], f.days.map(function (x) { return ['Day ' + x.day, n0(x.cap), n0(x.ref), n0(x.par), n0(x.total), n0(x.cum)]; })) : '<div class="chart" data-chart="forecast"></div>') + '</div>' +
+      '<p class="formula"><b>' + n0(f.total) + '</b> = ' + p.captains + ' captains × ' + p.reach + ' reached × ' + pct(p.ctr, 1) + ' click × ' + pct(p.cvr) + ' register = <b>' + n0(f.capDirect) + '</b> direct<br>+ <b>' + n0(f.parDirect) + '</b> from ' + p.partners + ' partner blasts<br>+ <b>' + n0(f.referred) + '</b> through squad referrals (K ' + p.k.toFixed(2) + ', landing a day later)</p>' +
+      tableHTML(['If every rate is…', 'Registrations', 'Captains needed for 500'], [['20% worse', n0(lo.total), String(C.captainsNeeded(C.scaleRates(p, 0.8)))], ['as set', n0(f.total), String(need)], ['20% better', n0(hi.total), String(C.captainsNeeded(C.scaleRates(p, 1.2)))]]) +
+      '<ul class="notes"><li>Three rates multiply, so a 20% miss on each is a ' + pct(1 - lo.total / f.total) + ' miss on the total. That is why the tracker watches each rate daily instead of the total.</li><li>Captain count is the only input that scales linearly and that I can change inside a day. Every checkpoint decision is “how many more captains do I switch on?”</li><li>Referrals that would land after Day 7 are not counted.</li></ul>';
+  }
+  function forecastHTML() {
+    var p = fcParams(), a = an();
+    return '<div class="view-head"><div><p class="eyebrow">The model behind the plan</p><h2>How 500 comes in</h2><p>Move any assumption and the week recalculates. The plan’s base case is loaded; “Measured” swaps in what the tracker has actually seen so far.</p></div></div>' +
+      '<div class="fc-grid"><section class="card"><div class="card-head"><h3>Assumptions</h3></div>' +
+        '<div class="msg-actions" role="group" aria-label="Presets" style="margin-bottom:18px">' + [['low', 'Rates −20%'], ['plan', 'Plan'], ['high', 'Rates +20%'], ['measured', 'Measured, Day ' + a.day]].map(function (x) { return '<button type="button" class="btn btn-sm" data-action="preset" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' +
+        '<div class="sliders">' + SLIDERS.map(function (s) { return '<div class="slider"><div class="top"><label for="sl-' + s.k + '">' + s.label + '</label><output id="out-' + s.k + '" for="sl-' + s.k + '">' + s.f(p[s.k]) + '</output></div><input type="range" id="sl-' + s.k + '" data-slider="' + s.k + '" min="' + s.min + '" max="' + s.max + '" step="' + s.step + '" value="' + p[s.k] + '"><small>' + s.hint + '</small></div>'; }).join('') + '</div></section>' +
+      '<section class="card" id="fcOut" style="display:grid;gap:18px">' + fcOutHTML() + '</section></div>';
+  }
+
+  /* ---------- launch kit ---------- */
+  function kitData() {
+    var a = an(), k = state.kit, s = sim();
+    var caps = a.captains.slice().sort(function (x, y) { return x.id < y.id ? -1 : 1; });
+    if (!k.capId || !find(caps, function (c) { return c.id === k.capId; })) k.capId = (a.captains[0] || caps[0]).id;
+    var cap = find(caps, function (c) { return c.id === k.capId; }), par = find(s.partners, function (p) { return p.id === k.partnerId; }) || s.partners[0];
+    var m = me(), student = m || find(a.referrers, function (r) { return !r.live; }) || { code: 'SNEH4KQ', name: 'Sneha R.' };
+    var token = k.who === 'captain' ? 'c-' + cap.id + '-' + k.grp : (k.who === 'partner' ? 'p-' + par.id : (k.who === 'student' ? 'r-' + student.code : ''));
+    var link = linkFor(token), N = n0(a.total), M = a.colleges.length, mineCol = find(a.colleges, function (c) { return c.college === cap.college; }), msgs = [];
+    var first = cap.name.split(' ')[0];
+    if (k.who === 'captain') {
+      var where = k.grp === 'class' ? 'class group' : (k.grp === 'batch' ? 'batch group' : 'hostel or project group');
+      msgs.push({ title: 'Wave 1 post, ' + where, when: k.grp === 'class' ? 'Day 2, 7 PM' : (k.grp === 'batch' ? 'Day 3, 1 PM' : 'Day 4, 1 PM'), wa: true, text: k.hook === 'B'
+        ? 'Hey everyone 👋 quick one for our batch.\n\nPlacements are on and most of our resumes have zero AI projects. NxtWave is running a free live session this Sunday, 7 PM: you build and deploy an AI Resume Analyzer in 60 minutes and leave with a live link for your resume. No coding background needed, any branch.\n\nI’ve registered. It takes 20 seconds:\n' + link
+        : 'Hey everyone 👋 NxtWave is running a free live workshop this Sunday, 7 PM: learn to build with AI in 60 minutes. Open to all branches.\n\nRegister here:\n' + link });
+      msgs.push({ title: 'Wave 2 post with live proof', when: 'Day 5, 7 PM', wa: true, text: N + ' final-years from ' + M + ' colleges have registered for Sunday’s 60-minute AI project build' + (mineCol ? ', ' + mineCol.fy + ' of them from ' + cap.college : '') + '.\n\nIf you want an AI project on your resume before the next drive, this is the easy one. Free, Sunday 7 PM, online:\n' + link });
+      msgs.push({ title: 'Last call', when: 'Day 7, 10 AM', wa: true, text: 'Last call 🔔 Registration for tonight’s 60-minute AI project build closes at 6 PM. Free, online, 7 PM. You leave with a live project link for your resume:\n' + link });
+    } else if (k.who === 'student') {
+      msgs.push({ title: 'Squad invite, framing B', when: 'Sent by the student right after registering', wa: true, text: 'I just registered for this: a free 60-minute live session this Sunday, 7 PM, where we build and deploy an AI project and leave with a live link for the resume. No coding background needed.\n\nIf 3 of our project team join with my link, all of us unlock the Final-Year Project Idea Pack. Takes 20 seconds:\n' + link });
+      msgs.push({ title: 'Generic invite, framing A', when: 'The control in Test 2', wa: true, text: 'I just registered for a free 60-minute AI project workshop this Sunday, 7 PM. Register with my link, it takes 20 seconds:\n' + link });
+      msgs.push({ title: 'One-more-to-unlock nudge', when: 'Day 6, to everyone sitting at 2 of 3', wa: true, text: 'You’re one teammate away from unlocking the Final-Year Project Idea Pack for your whole squad. The unlock closes Sunday 6 PM. Your link:\n' + link });
+    } else if (k.who === 'partner') {
+      msgs.push({ title: 'Mail to the final-year list', when: 'Day 3 to Day 5, sent by the ' + (par.type === 'club' ? 'club lead' : 'placement officer'), mail: true, text: 'Subject: Free 60-minute live session this Sunday: build your first AI project\n\nDear final-years,\n\nNxtWave is hosting a free live online session this Sunday at 7 PM. In 60 minutes you will build and deploy your first AI project (an AI Resume Analyzer) and leave with a live link you can add to your resume before the next placement drive.\n\nNo coding background is needed and all branches are welcome. Registration takes 20 seconds and closes Sunday 6 PM:\n' + link + '\n\nRegards,\n' + par.label + ', ' + par.college });
+      msgs.push({ title: 'Community broadcast', when: 'Same day as the mail', wa: true, text: '📢 For final-years: free live session this Sunday, 7 PM. Build and deploy your first AI project in 60 minutes and leave with a live link for your resume. All branches, no coding background needed.\n\nRegister (20 seconds):\n' + link });
+    } else {
+      msgs.push({ title: 'Captain recruitment DM', when: 'Day 1, to club leads and class reps', wa: true, text: 'Hi ' + first + ', I’m Priyanshu, a final-year at RIT Bengaluru working on a free NxtWave session this Sunday: final-years build and deploy their first AI project in 60 minutes.\n\nI’m looking for one Campus Captain per college to share it in the class and batch groups. It is three WhatsApp posts over a week. You get a Captain certificate, a live leaderboard, and the top 3 captains split ₹1,000.\n\nWant your college’s link?' });
+      msgs.push({ title: 'Nudge for a captain who has not posted', when: 'Day 2 and Day 3, 8 PM', wa: true, text: nudgeText(a) });
+      msgs.push({ title: 'Captain-get-captain ask', when: 'Day 4 checkpoint, if captains are short', wa: true, text: 'Quick favour, ' + first + ': which friend of yours at another college would do what you’re doing here? School friends are spread across campuses and that is our fastest way to reach them. Send me one name and I’ll set up their link tonight. New captains who cross 8 registrations by Saturday get ₹50 from the bounty.' });
+      msgs.push({ title: 'Reminders to registrants', when: 'T-24h, T-1h and T-10min, in the workshop WhatsApp group', wa: false, text: 'T-24h: Tomorrow, 7 PM: Build Your First AI Project in 60 Minutes. A laptop is best, a phone works. The join link comes here one hour before.\n\nT-1h: We start in one hour. Join link: [link]. Keep your resume PDF handy, you will test your project on it.\n\nT-10min: Starting in 10 minutes. ' + N + ' of your batchmates are in. Tap to join: [link]' });
+    }
+    return { a: a, caps: caps, cap: cap, par: par, partners: s.partners, student: student, token: token, link: link, msgs: msgs };
+  }
+  function kitHTML() {
+    var k = state.kit, d = kitData();
+    var who = [['captain', 'Campus Captain'], ['student', 'Student squad'], ['partner', 'Club or placement cell'], ['me', 'Me: recruit and remind']];
+    return '<div class="view-head"><div><p class="eyebrow">Ready to send</p><h2>Launch kit</h2><p>Every sender gets their own tracked link, so every registration in Mission control has an owner. Pick a sender, copy the message, post it.</p></div></div>' +
+      '<div class="kit-grid"><section class="card kit-form"><div class="field"><span class="lbl">Who is sending?</span><div class="chips">' + who.map(function (w) { return '<button type="button" class="chip-btn" data-action="kit-who" data-v="' + w[0] + '" aria-pressed="' + (k.who === w[0]) + '">' + w[1] + '</button>'; }).join('') + '</div></div>' +
+        (k.who === 'captain' || k.who === 'me' ? '<div class="field"><label for="kit-cap">Captain</label><select id="kit-cap" data-change="kit-cap">' + d.caps.map(function (c) { return '<option value="' + c.id + '"' + (c.id === k.capId ? ' selected' : '') + '>' + esc(c.id + ' · ' + c.name + ', ' + c.college) + '</option>'; }).join('') + '</select></div>' : '') +
+        (k.who === 'captain' ? '<div class="field"><span class="lbl">Posting in</span><div class="seg" role="group" aria-label="Group">' + seg('kit-grp', 'class', 'Class group', k.grp) + seg('kit-grp', 'batch', 'Batch group', k.grp) + seg('kit-grp', 'other', 'Hostel / project', k.grp) + '</div></div>' +
+          '<div class="field"><span class="lbl">Hook (Test 1)</span><div class="seg" role="group" aria-label="Hook">' + seg('kit-hook', 'A', 'A · Learning', k.hook) + seg('kit-hook', 'B', 'B · Outcome', k.hook) + '</div></div>' : '') +
+        (k.who === 'partner' ? '<div class="field"><label for="kit-par">Partner</label><select id="kit-par" data-change="kit-par">' + d.partners.map(function (p) { return '<option value="' + p.id + '"' + (p.id === k.partnerId ? ' selected' : '') + '>' + esc(p.id + ' · ' + p.label + ', ' + p.college) + '</option>'; }).join('') + '</select></div>' : '') +
+        (k.who === 'student' ? '<p class="fine">Using the link of ' + esc(d.student.name) + ' (' + esc(d.student.code) + ')' + (me() ? ', the student registered in this browser.' : ', the top referrer in the sample data. Register in Student view to use your own.') + '</p>' : '') +
+        (d.token ? '<div class="linkbox"><span class="lbl">Tracked link</span><span class="url" id="kitLink">' + esc(d.link) + '</span><div class="msg-actions"><button type="button" class="btn btn-sm" data-action="copy" data-from="#kitLink">' + ICON.copy + 'Copy link</button><button type="button" class="btn btn-sm btn-primary" data-action="kit-open">Open it as a student</button></div></div>'
+                 : '<p class="fine">These messages go out from me to captains and registrants, so they carry no student link.</p>') +
+        '<p class="fine">Posting rule: never more than one post a day in the same group, and always from a member of that group.</p></section>' +
+      '<section class="card msgs">' + d.msgs.map(function (m, i) { return '<div class="msg"><div class="msg-head"><b>' + esc(m.title) + '</b><span>' + esc(m.when) + '</span></div><div class="bubble' + (m.mail ? ' mail' : '') + '" id="msg-' + i + '">' + esc(m.text) + '</div><div class="msg-actions"><button type="button" class="btn btn-sm" data-action="copy" data-from="#msg-' + i + '">' + ICON.copy + 'Copy</button>' + (m.wa ? '<a class="btn btn-sm btn-wa" href="' + esc(waLink(m.text)) + '" target="_blank" rel="noopener">' + ICON.chat + 'Open in WhatsApp</a>' : '') + '</div></div>'; }).join('') + '</section></div>';
+  }
+
+  /* ---------- render and events ---------- */
+  var RENDER = {
+    student: renderStudent,
+    mission: function () { var v = $('#view-mission'); v.innerHTML = missionHTML(); drawCharts(v); },
+    forecast: function () { var v = $('#view-forecast'); v.innerHTML = forecastHTML(); drawCharts(v); },
+    kit: function () { $('#view-kit').innerHTML = kitHTML(); }
+  };
+  function render() {
+    cache = null; $('#tip').hidden = true;
+    $$('.tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === state.tab)); });
+    ['student', 'mission', 'forecast', 'kit'].forEach(function (t) { $('#view-' + t).hidden = t !== state.tab; });
+    RENDER[state.tab]();
+  }
+  function commit() { save(); render(); }
+  function setTab(t) {
+    state.tab = t; commit();
+    var w = $('.tabs-wrap'); if (w.getBoundingClientRect().top <= 1) window.scrollTo(0, w.offsetTop);
+    var b = $('.tab[data-tab="' + t + '"]'); if (b && b.scrollIntoView) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  function applyTheme() {
+    if (state.theme) document.documentElement.setAttribute('data-theme', state.theme);
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    $('#themeBtn').textContent = dark ? 'Light mode' : 'Dark mode';
+    return dark;
+  }
+  function stopPlay() { if (playing) { clearInterval(playing); playing = null; } }
+
+  var ACTIONS = {
+    theme: function () { state.theme = applyTheme() ? 'light' : 'dark'; applyTheme(); save(); },
+    goto: function (el) { setTab(el.dataset.v); },
+    fill: function () {
+      var f = $('#regForm'); if (!f) return;
+      var first = pick(C.FIRST), e = entryInfo(state.entry);
+      f.elements.name.value = first + ' ' + pick(['Reddy', 'Sharma', 'Iyer', 'Nair', 'Patil', 'Gupta', 'Rao', 'Menon', 'Das', 'Verma']);
+      f.elements.phone.value = '9' + String(Math.floor(100000000 + Math.random() * 899999999));
+      if (!f.elements.college.value) f.elements.college.value = e.college || pick(C.COLLEGES);
+      onFormInput();
+    },
+    hook: function (el) { state.hook = el.dataset.v; var v = curVisit(); if (v && !v.regId) v.hook = state.hook; commit(); },
+    frame: function (el) { state.frame = el.dataset.v; var m = me(); if (m) m.inc = state.frame; commit(); },
+    newvisitor: function () { startVisit(); commit(); },
+    teammate: function () { addTeammate(); commit(); },
+    reset: function () {
+      if (!confirmReset) { confirmReset = true; renderStudent(); setTimeout(function () { if (confirmReset) { confirmReset = false; if (state.tab === 'student') renderStudent(); } }, 4000); return; }
+      confirmReset = false; state.live = { visits: [], regs: [], events: [] }; state.meId = null; state.visitId = null; state.dupes = 0; state.screen = 'main';
+      startVisit(); commit(); toast('Session cleared');
+    },
+    share: function () { var m = me(); if (m && !m.shared) { m.shared = true; ev('share', m.name + ' tapped Share on WhatsApp.'); save(); setTimeout(function () { cache = null; $('#side').innerHTML = sideHTML(an(), me()); }, 50); } },
+    copylink: function () { var m = me(); if (!m) return; copyText(linkFor('r-' + m.code), 'Link copied', $('.link-line')); if (!m.shared) { m.shared = true; ev('share', m.name + ' copied their squad link.'); commit(); } },
+    copy: function (el) { var src = $(el.dataset.from); if (src) copyText(src.textContent, 'Copied', src); },
+    screen: function (el) { state.screen = el.dataset.v; commit(); },
+    lb: function (el) { state.lb = el.dataset.v; commit(); },
+    branch: function (el) { var m = me(); if (m) { m.branch = el.dataset.v; ev('profile', m.name + ' added a branch: ' + m.branch + '. Asked after registering, so it never costs a sign-up.'); commit(); } },
+    day: function (el) { stopPlay(); state.day = Number(el.dataset.v); commit(); },
+    play: function () {
+      if (playing) { stopPlay(); commit(); return; }
+      state.day = 1; commit();
+      playing = setInterval(function () { if (state.day >= 7 || state.tab !== 'mission') { stopPlay(); commit(); return; } state.day++; commit(); }, 1300);
+      commit();
+    },
+    lever: function () { state.lever = !state.lever; commit(); },
+    table: function (el) { state.tables[el.dataset.v] = !state.tables[el.dataset.v]; commit(); },
+    capall: function () { state.capAll = !state.capAll; commit(); },
+    nudge: function () { copyText(nudgeText(an()), 'Nudge message copied'); },
+    csv: function (el) {
+      var text = csv();
+      if (el.dataset.v === 'copy') { copyText(text, 'CSV copied'); return; }
+      /*DL-START*/try { var url = URL.createObjectURL(new Blob([text], { type: 'text/csv' })), aEl = document.createElement('a'); aEl.href = url; aEl.download = 'loop500-registrations-day' + state.day + '.csv'; document.body.appendChild(aEl); aEl.click(); document.body.removeChild(aEl); setTimeout(function () { URL.revokeObjectURL(url); }, 1000); } catch (e) { copyText(text, 'CSV copied instead'); }/*DL-END*/
+    },
+    preset: function (el) {
+      var v = el.dataset.v, a = an(), base = pickParams(C.PLAN);
+      if (v === 'low') state.fc = pickParams(C.scaleRates(base, 0.8));
+      else if (v === 'high') state.fc = pickParams(C.scaleRates(base, 1.2));
+      else if (v === 'measured') {
+        var r = a.projection.rates || {}, m = a.measured;
+        state.fc = C.assign(base, { captains: Math.max(5, a.activeCaptains + a.onboarding), ctr: C.clamp(C.PLAN.ctr * (m.clickIndex === null ? 1 : m.clickIndex), 0.04, 0.25), cvr: C.clamp(m.cvr === null ? C.PLAN.cvr : m.cvr, 0.15, 0.65), k: C.clamp(m.k === null ? C.PLAN.k : m.k, 0, 0.8), partnerCtr: C.PLAN.partnerCtr * (r.parIdx === null || r.parIdx === undefined ? 1 : r.parIdx) });
+        toast('Loaded Day ' + a.day + ' measured rates');
+      } else state.fc = base;
+      commit();
+    },
+    'kit-who': function (el) { state.kit.who = el.dataset.v; commit(); },
+    'kit-grp': function (el) { state.kit.grp = el.dataset.v; commit(); },
+    'kit-hook': function (el) { state.kit.hook = el.dataset.v; commit(); },
+    'kit-open': function () { var d = kitData(); state.entry = d.token; if (state.kit.who === 'captain') state.hook = state.kit.hook; startVisit(); state.tab = 'student'; commit(); window.scrollTo(0, 0); toast('Opened as a new visitor from that link'); }
+  };
+  var CHANGES = {
+    entry: function (v) { state.entry = v; startVisit(); commit(); },
+    identity: function (v) { if (!v) { startVisit(); } else { state.meId = v; state.screen = 'main'; } commit(); },
+    'kit-cap': function (v) { state.kit.capId = v; commit(); },
+    'kit-par': function (v) { state.kit.partnerId = v; commit(); }
+  };
+  function onFormInput() {
+    var f = $('#regForm'); if (!f) return;
+    var y = f.querySelector('input[name="year"]:checked');
+    state.draft = { name: f.elements.name.value, phone: f.elements.phone.value, college: f.elements.college.value, year: y ? y.value : '2027' };
+    var v = curVisit();
+    if (v && !v.started) { v.started = true; ev('form', 'Form started.'); cache = null; $('#side').innerHTML = sideHTML(an(), me()); }
+    save();
+  }
+  function onSubmit(f) {
+    var y = f.querySelector('input[name="year"]:checked'), d = { name: f.elements.name.value.trim(), phone: f.elements.phone.value, college: f.elements.college.value.trim(), year: y ? y.value : '2027' };
+    var errs = { name: /[A-Za-zÀ-ɏऀ-෿]{2}/.test(d.name) ? '' : 'Enter your name', phone: C.validPhone(d.phone) ? '' : 'Enter a 10-digit WhatsApp number', college: d.college.length >= 2 ? '' : 'Pick or type your college' }, firstBad = null;
+    ['name', 'phone', 'college'].forEach(function (k) {
+      var inp = f.elements[k], el = $('#e-' + k);
+      el.textContent = errs[k]; el.hidden = !errs[k]; inp.setAttribute('aria-invalid', String(!!errs[k]));
+      if (errs[k] && !firstBad) firstBad = inp;
+    });
+    if (firstBad) { firstBad.focus(); return; }
+    var key = phoneKey(d.phone), dup = find(state.live.regs, function (r) { return r.phoneKey === key; });
+    if (dup) { state.dupes++; state.meId = dup.id; state.screen = 'main'; ev('blocked', 'Duplicate number: already registered as ' + dup.name + ' (' + dup.code + '). No second seat created.'); commit(); toast('That number is already registered. Here is the pass.'); return; }
+    register(d); commit();
+    var m = me(); toast(m && m.fy ? 'Registered. You are seat ' + n0(m.seat) + '.' : 'Registered.');
+  }
+
+  document.addEventListener('click', function (e) {
+    var tab = e.target.closest('.tab'); if (tab) { setTab(tab.dataset.tab); return; }
+    var el = e.target.closest('[data-action]'); if (!el || el.disabled) return;
+    var fn = ACTIONS[el.dataset.action]; if (!fn) return;
+    if (el.tagName !== 'A') e.preventDefault();
+    fn(el);
+  });
+  document.addEventListener('change', function (e) { var el = e.target.closest('[data-change]'); if (el && CHANGES[el.dataset.change]) CHANGES[el.dataset.change](el.value); });
+  document.addEventListener('input', function (e) {
+    if (e.target.closest('#regForm')) { onFormInput(); return; }
+    var sl = e.target.closest('[data-slider]');
+    if (sl) {
+      var s = find(SLIDERS, function (x) { return x.k === sl.dataset.slider; }); fcParams()[s.k] = Number(sl.value);
+      $('#out-' + s.k).textContent = s.f(Number(sl.value)); var out = $('#fcOut'); out.innerHTML = fcOutHTML(); drawCharts(out); save();
+    }
+  });
+  document.addEventListener('submit', function (e) { if (e.target.id === 'regForm') { e.preventDefault(); onSubmit(e.target); } });
+
+  /* tooltips: one floating panel, content set with textContent */
+  var tipEl = $('#tip');
+  function showTip(target, x, y) {
+    var data; try { data = JSON.parse(target.getAttribute('data-tip')); } catch (e) { return; }
+    tipEl.textContent = '';
+    var h = document.createElement('h5'); h.textContent = data.t; tipEl.appendChild(h);
+    data.rows.forEach(function (r) {
+      var row = document.createElement('div'), key = document.createElement('i'), lab = document.createElement('span'), val = document.createElement('b');
+      if (r[2]) key.style.borderTopColor = 'var(' + r[2] + ')'; else key.style.borderTopColor = 'transparent';
+      lab.textContent = r[0]; val.textContent = r[1]; row.appendChild(key); row.appendChild(lab); row.appendChild(val); tipEl.appendChild(row);
+    });
+    tipEl.hidden = false;
+    var w = tipEl.offsetWidth, hh = tipEl.offsetHeight, vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+    tipEl.style.left = Math.max(8, Math.min(vw - w - 8, x + 14)) + 'px';
+    tipEl.style.top = Math.max(8, (y + hh + 22 > vh ? y - hh - 12 : y + 16)) + 'px';
+  }
+  document.addEventListener('pointermove', function (e) { var t = e.target.closest ? e.target.closest('[data-tip]') : null; if (t) showTip(t, e.clientX, e.clientY); else tipEl.hidden = true; });
+  document.addEventListener('pointerdown', function (e) { var t = e.target.closest ? e.target.closest('[data-tip]') : null; if (t) showTip(t, e.clientX, e.clientY); else tipEl.hidden = true; });
+  document.addEventListener('focusin', function (e) { var t = e.target.closest ? e.target.closest('[data-tip]') : null; if (t) { var r = t.getBoundingClientRect(); showTip(t, r.left + r.width / 2, r.top + 20); } });
+  document.addEventListener('focusout', function () { tipEl.hidden = true; });
+  document.addEventListener('scroll', function () { tipEl.hidden = true; }, true);
+  var rz = null;
+  window.addEventListener('resize', function () { clearTimeout(rz); rz = setTimeout(function () { if (state.tab === 'mission' || state.tab === 'forecast') drawCharts($('#view-' + state.tab)); }, 150); });
+
+  /* ---------- boot: read the link token, open the right view ---------- */
+  function handleHash() {
+    var raw = location.hash.replace(/^#/, ''), t = C.parseToken(raw);
+    if (!t) return false;
+    if (t.kind === 'tab') { state.tab = t.tab; return true; }
+    if (raw !== state.handledToken) { state.handledToken = raw; state.entry = raw; state.tab = 'student'; startVisit(); }
+    else state.tab = 'student';
+    return true;
+  }
+  function boot() {
+    applyTheme();
+    var viaLink = handleHash();
+    if (state.entry === null) { var top = an().captains[0]; state.entry = top ? 'c-' + top.id + '-class' : ''; cache = null; }
+    if (!viaLink && !state.visitId) startVisit();
+    if (!viaLink) state.handledToken = state.handledToken || null;
+    commit();
+  }
+  window.addEventListener('hashchange', function () { if (handleHash()) commit(); });
+  boot();
+})();
